@@ -1,30 +1,125 @@
-notificationReceived: function (notification, payload, sender) {
+Module.register("MMM-NotificationDev", {
 
-    // Ignore paused module
-    if (this.paused) return;
+    defaults: {
+        maxNotifications: 100,
+        showPayload: true,
+        updateInterval: 1000 // throttle DOM updates (ms)
+    },
 
-    // Ignore blocked notifications
-    if (this.blockedNotifications.includes(notification)) return;
+    // Notifications to ignore
+    blockedNotifications: ["CLOCK_SECOND"],
 
-    const senderName = sender && sender.name ? sender.name : "SYSTEM";
+    start: function () {
+        this.notifications = [];
+        this.paused = false;
+        this.filter = "";
+        this.loaded = false;
+        this.updateTimer = null;
 
-    this.notifications.push({
-        time: new Date().toLocaleTimeString(),
-        notification,
-        payload: payload || null,
-        sender: senderName
-    });
+        Log.info("MMM-NotificationDev started");
+    },
 
-    if (this.notifications.length > this.config.maxNotifications) {
-        this.notifications.shift();
-    }
+    getStyles: function () {
+        return ["MMM-NotificationDev.css"];
+    },
 
-    if (!this.loaded) this.loaded = true;
+    getDom: function () {
 
-    if (!this.updateTimer) {
-        this.updateTimer = setTimeout(() => {
+        const wrapper = document.createElement("div");
+
+        // Always show controls
+        const controls = document.createElement("div");
+        controls.className = "controls";
+
+        const pauseBtn = document.createElement("button");
+        pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
+        pauseBtn.onclick = () => {
+            this.paused = !this.paused;
             this.updateDom();
-            this.updateTimer = null;
-        }, this.config.updateInterval);
+        };
+
+        const filterInput = document.createElement("input");
+        filterInput.placeholder = "Filter notifications...";
+        filterInput.value = this.filter;
+        filterInput.oninput = (e) => {
+            this.filter = e.target.value.toUpperCase();
+            this.updateDom();
+        };
+
+        controls.appendChild(pauseBtn);
+        controls.appendChild(filterInput);
+        wrapper.appendChild(controls);
+
+        // Notification list
+        const list = document.createElement("div");
+        list.className = "notification-list";
+
+        if (!this.loaded) {
+            list.innerHTML = "<i>Waiting for notifications...</i>";
+            wrapper.appendChild(list);
+            return wrapper;
+        }
+
+        // Filter notifications dynamically
+        const filtered = this.filter
+            ? this.notifications.filter(n => n.notification.includes(this.filter))
+            : this.notifications;
+
+        filtered.slice().reverse().forEach(n => {
+            const row = document.createElement("div");
+            row.className = "row";
+
+            row.innerHTML = `<b>${n.time}</b> 
+                             <span class="sender">${n.sender}</span> 
+                             <span class="notification">${n.notification}</span>`;
+
+            list.appendChild(row);
+
+            if (this.config.showPayload && n.payload !== undefined) {
+                const payload = document.createElement("pre");
+                try {
+                    payload.innerText = JSON.stringify(n.payload, null, 2);
+                } catch (e) {
+                    payload.innerText = String(n.payload);
+                }
+                list.appendChild(payload);
+            }
+        });
+
+        wrapper.appendChild(list);
+        return wrapper;
+    },
+
+    notificationReceived: function (notification, payload, sender) {
+
+        if (!this.loaded) this.loaded = true;
+
+        if (this.paused) return;
+
+        // Ignore blocked notifications
+        if (this.blockedNotifications.includes(notification)) return;
+
+        const senderName = sender && sender.name ? sender.name : "SYSTEM";
+
+        this.notifications.push({
+            time: new Date().toLocaleTimeString(),
+            notification,
+            payload: payload || null,
+            sender: senderName
+        });
+
+        // Keep maxNotifications
+        if (this.notifications.length > this.config.maxNotifications) {
+            this.notifications.shift();
+        }
+
+        // Throttle DOM updates
+        if (!this.updateTimer) {
+            this.updateTimer = setTimeout(() => {
+                this.updateDom();
+                this.updateTimer = null;
+            }, this.config.updateInterval);
+        }
     }
-}
+
+});
