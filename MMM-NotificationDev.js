@@ -3,8 +3,8 @@ Module.register("MMM-NotificationDev", {
     defaults: {
         maxNotifications: 100,
         showPayload: true,
-        updateInterval: 1000,
-        blockedNotifications: ["MODULE_DOM", "DOM_OBJECTS_CREATED", "CLOCK_SECOND"]
+        updateInterval: 1000, // throttle DOM updates in ms
+        blockedNotifications: ["MODULE_DOM", "DOM_OBJECTS_CREATED", "CLOCK_SECOND"] // configurable
     },
 
     start: function () {
@@ -14,8 +14,12 @@ Module.register("MMM-NotificationDev", {
         this.loaded = false;
         this.updateTimer = null;
         this.iframeReady = false;
-        this.lastRenderedIndex = 0; // Track how many notifications we've rendered
+        this.lastRenderedIndex = 0;
         Log.info("MMM-NotificationDev started");
+    },
+
+    getStyles: function () {
+        return ["MMM-NotificationDev.css"];
     },
 
     getDom: function () {
@@ -30,7 +34,7 @@ Module.register("MMM-NotificationDev", {
         pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
         pauseBtn.onclick = () => {
             this.paused = !this.paused;
-            this.updateIframe();
+            this.updateIframe(true); // refresh to update UI
         };
 
         const filterInput = document.createElement("input");
@@ -38,7 +42,7 @@ Module.register("MMM-NotificationDev", {
         filterInput.value = this.filter;
         filterInput.oninput = (e) => {
             this.filter = e.target.value.toUpperCase();
-            this.updateIframe(true); // force full re-render when filter changes
+            this.updateIframe(true); // full re-render on filter change
         };
 
         controls.appendChild(pauseBtn);
@@ -51,6 +55,7 @@ Module.register("MMM-NotificationDev", {
             this.iframe.style.width = "100%";
             this.iframe.style.height = "400px";
             this.iframe.style.border = "1px solid #444";
+
             this.iframe.onload = () => {
                 this.iframeReady = true;
                 const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
@@ -58,12 +63,12 @@ Module.register("MMM-NotificationDev", {
                 doc.write("<html><head><style>" +
                     "body{font-family:monospace;color:#fff;background:#111;margin:0;padding:5px}" +
                     ".row{border-bottom:1px solid #444;padding:2px 0}" +
-                    ".sender{color:#0ff;margin:0 5px}" +
+                    ".sender{margin:0 5px}" +
                     ".notification{color:#6cf}" +
                     "pre{color:#aaa;background:#111;padding:2px;margin:2px 0;overflow-x:auto}" +
                     "</style></head><body></body></html>");
                 doc.close();
-                this.updateIframe(true); // initial render
+                this.updateIframe(true);
             };
             wrapper.appendChild(this.iframe);
         }
@@ -81,7 +86,7 @@ Module.register("MMM-NotificationDev", {
         this.notifications.push({
             time: new Date().toLocaleTimeString(),
             notification,
-            payload: payload || null,
+            payload: payload !== undefined ? payload : null,
             sender: senderName
         });
 
@@ -89,7 +94,6 @@ Module.register("MMM-NotificationDev", {
             this.notifications.shift();
         }
 
-        // Throttle iframe updates
         if (!this.updateTimer) {
             this.updateTimer = setTimeout(() => {
                 this.updateIframe();
@@ -98,33 +102,43 @@ Module.register("MMM-NotificationDev", {
         }
     },
 
-    // Update iframe content
     updateIframe: function(forceFull = false) {
         if (!this.iframeReady) return;
         const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
         const body = doc.body;
 
-        // If filter changed, full re-render
+        // Full re-render if needed
         if (forceFull) {
-            body.innerHTML = ""; // clear all
+            body.innerHTML = "";
             this.lastRenderedIndex = 0;
         }
 
+        // Filter notifications
         const filtered = this.filter
             ? this.notifications.filter(n => n.notification.includes(this.filter))
             : this.notifications;
 
-        // Only render new notifications
+        // Append only new notifications
         for (let i = this.lastRenderedIndex; i < filtered.length; i++) {
             const n = filtered[i];
+
+            // Skip completely empty notifications
+            if (!n.notification && (n.payload === null || n.payload === undefined)) continue;
+
             const row = doc.createElement("div");
             row.className = "row";
+
+            // Color code: SYSTEM = cyan, modules = light blue
+            const senderColor = (n.sender === "SYSTEM") ? "#0ff" : "#6cf";
+
             row.innerHTML = `<b>${n.time}</b> 
-                             <span class="sender">${n.sender}</span> 
+                             <span class="sender" style="color:${senderColor}">${n.sender}</span> 
                              <span class="notification">${n.notification}</span>`;
+
             body.appendChild(row);
 
-            if (this.config.showPayload && n.payload !== undefined) {
+            // Only show payload if it exists
+            if (this.config.showPayload && n.payload !== null && n.payload !== undefined) {
                 const pre = doc.createElement("pre");
                 try {
                     pre.innerText = JSON.stringify(n.payload, null, 2);
