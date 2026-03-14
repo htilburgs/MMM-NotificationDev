@@ -2,13 +2,15 @@ Module.register("MMM-NotificationDev", {
 
     defaults: {
         maxNotifications: 100,
-        showPayload: true
+        showPayload: true,
+        updateInterval: 1000 // update DOM once per second max
     },
 
     start: function () {
         this.notifications = [];
         this.paused = false;
         this.filter = "";
+        this.loaded = false;
 
         Log.info("Starting module: " + this.name);
     },
@@ -21,19 +23,23 @@ Module.register("MMM-NotificationDev", {
 
         const wrapper = document.createElement("div");
 
-        // Controls
+        if (!this.loaded) {
+            wrapper.innerHTML = "Notification monitor starting...";
+            return wrapper;
+        }
+
         const controls = document.createElement("div");
-        controls.className = "controls";
 
         const pauseBtn = document.createElement("button");
         pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
+
         pauseBtn.onclick = () => {
             this.paused = !this.paused;
             this.updateDom();
         };
 
         const filterInput = document.createElement("input");
-        filterInput.placeholder = "Filter notification...";
+        filterInput.placeholder = "Filter...";
         filterInput.value = this.filter;
 
         filterInput.oninput = (e) => {
@@ -47,7 +53,6 @@ Module.register("MMM-NotificationDev", {
         wrapper.appendChild(controls);
 
         const list = document.createElement("div");
-        list.className = "notification-list";
 
         let filtered = this.notifications;
 
@@ -60,29 +65,19 @@ Module.register("MMM-NotificationDev", {
         filtered.slice().reverse().forEach(n => {
 
             const row = document.createElement("div");
-            row.className = "row";
 
-            const header = document.createElement("div");
-            header.className = "header";
-
-            header.innerHTML =
-                `<span class="time">${n.time}</span>
-                 <span class="sender">${n.sender}</span>
-                 <span class="notification">${n.notification}</span>`;
-
-            row.appendChild(header);
-
-            if (this.config.showPayload && n.payload !== undefined) {
-
-                const payload = document.createElement("pre");
-                payload.className = "payload";
-
-                payload.innerText = JSON.stringify(n.payload, null, 2);
-
-                row.appendChild(payload);
-            }
+            row.innerHTML =
+                `<b>${n.time}</b> 
+                 <span style="color:#0ff">${n.sender}</span> 
+                 <span style="color:#6cf">${n.notification}</span>`;
 
             list.appendChild(row);
+
+            if (this.config.showPayload && n.payload !== undefined) {
+                const payload = document.createElement("pre");
+                payload.innerText = JSON.stringify(n.payload, null, 2);
+                list.appendChild(payload);
+            }
 
         });
 
@@ -102,7 +97,7 @@ Module.register("MMM-NotificationDev", {
             sender: sender ? sender.name : "SYSTEM"
         };
 
-        console.log("[MMM-NotificationDev]", entry);
+        console.log("[NotificationDev]", entry);
 
         this.notifications.push(entry);
 
@@ -110,7 +105,17 @@ Module.register("MMM-NotificationDev", {
             this.notifications.shift();
         }
 
-        this.updateDom();
+        if (!this.loaded) {
+            this.loaded = true;
+        }
+
+        if (!this.updateTimer) {
+            this.updateTimer = setTimeout(() => {
+                this.updateDom();
+                this.updateTimer = null;
+            }, this.config.updateInterval);
+        }
+
     }
 
 });
