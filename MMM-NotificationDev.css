@@ -1,0 +1,49 @@
+.MMM-NotificationDev {
+    font-size: 14px;
+    width: 700px;
+}
+
+.controls {
+    margin-bottom: 10px;
+}
+
+.controls button {
+    margin-right: 10px;
+}
+
+.controls input {
+    padding: 4px;
+}
+
+.notification-list {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.row {
+    border-bottom: 1px solid #444;
+    padding: 4px;
+}
+
+.header {
+    font-weight: bold;
+}
+
+.time {
+    color: #888;
+    margin-right: 8px;
+}
+
+.sender {
+    color: #00ffaa;
+    margin-right: 8px;
+}
+
+.notification {
+    color: #00ccff;
+}
+
+.payload {
+    font-size: 12px;
+    color: #aaa;
+}
