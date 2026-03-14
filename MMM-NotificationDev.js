@@ -3,11 +3,9 @@ Module.register("MMM-NotificationDev", {
     defaults: {
         maxNotifications: 100,
         showPayload: true,
-        updateInterval: 1000 // throttle DOM updates (ms)
+        updateInterval: 1000, // throttle DOM updates (ms)
+        blockedNotifications: ["MODULE_DOM", "DOM_OBJECTS_CREATED", "CLOCK_SECOND"] // configurable
     },
-
-    // Notifications to ignore
-    blockedNotifications: ["CLOCK_SECOND"],
 
     start: function () {
         this.notifications = [];
@@ -24,10 +22,9 @@ Module.register("MMM-NotificationDev", {
     },
 
     getDom: function () {
-
         const wrapper = document.createElement("div");
 
-        // Always show controls
+        // Controls
         const controls = document.createElement("div");
         controls.className = "controls";
 
@@ -60,7 +57,6 @@ Module.register("MMM-NotificationDev", {
             return wrapper;
         }
 
-        // Filter notifications dynamically
         const filtered = this.filter
             ? this.notifications.filter(n => n.notification.includes(this.filter))
             : this.notifications;
@@ -93,11 +89,10 @@ Module.register("MMM-NotificationDev", {
     notificationReceived: function (notification, payload, sender) {
 
         if (!this.loaded) this.loaded = true;
-
         if (this.paused) return;
 
-        // Ignore blocked notifications
-        if (this.blockedNotifications.includes(notification)) return;
+        // Use the blockedNotifications from config
+        if (this.config.blockedNotifications.includes(notification)) return;
 
         const senderName = sender && sender.name ? sender.name : "SYSTEM";
 
@@ -108,12 +103,10 @@ Module.register("MMM-NotificationDev", {
             sender: senderName
         });
 
-        // Keep maxNotifications
         if (this.notifications.length > this.config.maxNotifications) {
             this.notifications.shift();
         }
 
-        // Throttle DOM updates
         if (!this.updateTimer) {
             this.updateTimer = setTimeout(() => {
                 this.updateDom();
