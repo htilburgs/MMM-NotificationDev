@@ -1,49 +1,25 @@
 .MMM-NotificationDev {
+    width: 100%;
     font-size: 14px;
-    width: 700px;
 }
 
 .controls {
-    margin-bottom: 10px;
+    margin-bottom: 5px;
 }
 
 .controls button {
-    margin-right: 10px;
+    margin-right: 5px;
+    padding: 3px 6px;
+    background-color: #222;
+    color: #0ff;
+    border: 1px solid #0ff;
+    cursor: pointer;
 }
 
 .controls input {
-    padding: 4px;
-}
-
-.notification-list {
-    max-height: 600px;
-    overflow-y: auto;
-}
-
-.row {
-    border-bottom: 1px solid #444;
-    padding: 4px;
-}
-
-.header {
-    font-weight: bold;
-}
-
-.time {
-    color: #888;
-    margin-right: 8px;
-}
-
-.sender {
-    color: #00ffaa;
-    margin-right: 8px;
-}
-
-.notification {
-    color: #00ccff;
-}
-
-.payload {
-    font-size: 12px;
-    color: #aaa;
+    padding: 3px 6px;
+    width: 200px;
+    background-color: #111;
+    color: #fff;
+    border: 1px solid #0ff;
 }
