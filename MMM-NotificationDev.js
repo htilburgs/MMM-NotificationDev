@@ -3,8 +3,8 @@ Module.register("MMM-NotificationDev", {
     defaults: {
         maxNotifications: 100,
         showPayload: true,
-        updateInterval: 1000, // throttle DOM updates (ms)
-        blockedNotifications: ["MODULE_DOM", "DOM_OBJECTS_CREATED", "CLOCK_SECOND"] // configurable
+        updateInterval: 1000, // throttle DOM updates
+        blockedNotifications: ["MODULE_DOM", "DOM_OBJECTS_CREATED", "CLOCK_SECOND"]
     },
 
     start: function () {
@@ -13,18 +13,18 @@ Module.register("MMM-NotificationDev", {
         this.filter = "";
         this.loaded = false;
         this.updateTimer = null;
+        this.iframeReady = false;
 
         Log.info("MMM-NotificationDev started");
     },
 
-    getStyles: function () {
-        return ["MMM-NotificationDev.css"];
-    },
-
     getDom: function () {
-        const wrapper = document.createElement("div");
 
-        // Controls
+        // Create main wrapper
+        const wrapper = document.createElement("div");
+        wrapper.className = "MMM-NotificationDev";
+
+        // Controls (pause & filter)
         const controls = document.createElement("div");
         controls.className = "controls";
 
@@ -40,49 +40,26 @@ Module.register("MMM-NotificationDev", {
         filterInput.value = this.filter;
         filterInput.oninput = (e) => {
             this.filter = e.target.value.toUpperCase();
-            this.updateDom();
+            this.updateIframe();
         };
 
         controls.appendChild(pauseBtn);
         controls.appendChild(filterInput);
         wrapper.appendChild(controls);
 
-        // Notification list
-        const list = document.createElement("div");
-        list.className = "notification-list";
-
-        if (!this.loaded) {
-            list.innerHTML = "<i>Waiting for notifications...</i>";
-            wrapper.appendChild(list);
-            return wrapper;
+        // Create iframe if not yet created
+        if (!this.iframe) {
+            this.iframe = document.createElement("iframe");
+            this.iframe.style.width = "100%";
+            this.iframe.style.height = "400px";
+            this.iframe.style.border = "1px solid #444";
+            this.iframe.onload = () => {
+                this.iframeReady = true;
+                this.updateIframe();
+            };
+            wrapper.appendChild(this.iframe);
         }
 
-        const filtered = this.filter
-            ? this.notifications.filter(n => n.notification.includes(this.filter))
-            : this.notifications;
-
-        filtered.slice().reverse().forEach(n => {
-            const row = document.createElement("div");
-            row.className = "row";
-
-            row.innerHTML = `<b>${n.time}</b> 
-                             <span class="sender">${n.sender}</span> 
-                             <span class="notification">${n.notification}</span>`;
-
-            list.appendChild(row);
-
-            if (this.config.showPayload && n.payload !== undefined) {
-                const payload = document.createElement("pre");
-                try {
-                    payload.innerText = JSON.stringify(n.payload, null, 2);
-                } catch (e) {
-                    payload.innerText = String(n.payload);
-                }
-                list.appendChild(payload);
-            }
-        });
-
-        wrapper.appendChild(list);
         return wrapper;
     },
 
@@ -91,7 +68,7 @@ Module.register("MMM-NotificationDev", {
         if (!this.loaded) this.loaded = true;
         if (this.paused) return;
 
-        // Use the blockedNotifications from config
+        // Ignore blocked notifications
         if (this.config.blockedNotifications.includes(notification)) return;
 
         const senderName = sender && sender.name ? sender.name : "SYSTEM";
@@ -107,12 +84,54 @@ Module.register("MMM-NotificationDev", {
             this.notifications.shift();
         }
 
+        // Throttle iframe updates
         if (!this.updateTimer) {
             this.updateTimer = setTimeout(() => {
-                this.updateDom();
+                this.updateIframe();
                 this.updateTimer = null;
             }, this.config.updateInterval);
         }
+    },
+
+    // Render inside iframe
+    updateIframe: function () {
+        if (!this.iframeReady) return;
+        const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
+        doc.open();
+        doc.write("<html><head><style>" +
+            "body{font-family:monospace;color:#fff;background:#111;margin:0;padding:5px}" +
+            ".row{border-bottom:1px solid #444;padding:2px 0}" +
+            ".sender{color:#0ff;margin:0 5px}" +
+            ".notification{color:#6cf}" +
+            "pre{color:#aaa;background:#111;padding:2px;margin:2px 0;overflow-x:auto}" +
+            "</style></head><body></body></html>");
+        doc.close();
+
+        const body = doc.body;
+
+        const filtered = this.filter
+            ? this.notifications.filter(n => n.notification.includes(this.filter))
+            : this.notifications;
+
+        filtered.slice().reverse().forEach(n => {
+            const row = doc.createElement("div");
+            row.className = "row";
+
+            row.innerHTML = `<b>${n.time}</b> 
+                             <span class="sender">${n.sender}</span> 
+                             <span class="notification">${n.notification}</span>`;
+            body.appendChild(row);
+
+            if (this.config.showPayload && n.payload !== undefined) {
+                const pre = doc.createElement("pre");
+                try {
+                    pre.innerText = JSON.stringify(n.payload, null, 2);
+                } catch (e) {
+                    pre.innerText = String(n.payload);
+                }
+                body.appendChild(pre);
+            }
+        });
     }
 
 });
