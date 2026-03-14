@@ -3,7 +3,7 @@ Module.register("MMM-NotificationDev", {
     defaults: {
         maxNotifications: 100,
         showPayload: true,
-        updateInterval: 1000 // update DOM once per second max
+        updateInterval: 1000 // throttle DOM updates
     },
 
     start: function () {
@@ -11,6 +11,7 @@ Module.register("MMM-NotificationDev", {
         this.paused = false;
         this.filter = "";
         this.loaded = false;
+        this.updateTimer = null;
 
         Log.info("Starting module: " + this.name);
     },
@@ -32,16 +33,14 @@ Module.register("MMM-NotificationDev", {
 
         const pauseBtn = document.createElement("button");
         pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
-
         pauseBtn.onclick = () => {
             this.paused = !this.paused;
             this.updateDom();
         };
 
         const filterInput = document.createElement("input");
-        filterInput.placeholder = "Filter...";
+        filterInput.placeholder = "Filter notifications...";
         filterInput.value = this.filter;
-
         filterInput.oninput = (e) => {
             this.filter = e.target.value.toUpperCase();
             this.updateDom();
@@ -49,21 +48,15 @@ Module.register("MMM-NotificationDev", {
 
         controls.appendChild(pauseBtn);
         controls.appendChild(filterInput);
-
         wrapper.appendChild(controls);
 
         const list = document.createElement("div");
 
-        let filtered = this.notifications;
-
-        if (this.filter) {
-            filtered = filtered.filter(n =>
-                n.notification.includes(this.filter)
-            );
-        }
+        const filtered = this.filter
+            ? this.notifications.filter(n => n.notification.includes(this.filter))
+            : this.notifications;
 
         filtered.slice().reverse().forEach(n => {
-
             const row = document.createElement("div");
 
             row.innerHTML =
@@ -75,14 +68,16 @@ Module.register("MMM-NotificationDev", {
 
             if (this.config.showPayload && n.payload !== undefined) {
                 const payload = document.createElement("pre");
-                payload.innerText = JSON.stringify(n.payload, null, 2);
+                try {
+                    payload.innerText = JSON.stringify(n.payload, null, 2);
+                } catch (e) {
+                    payload.innerText = String(n.payload);
+                }
                 list.appendChild(payload);
             }
-
         });
 
         wrapper.appendChild(list);
-
         return wrapper;
     },
 
@@ -90,16 +85,16 @@ Module.register("MMM-NotificationDev", {
 
         if (this.paused) return;
 
-        const entry = {
+        // Safe sender
+        const senderName = sender && sender.name ? sender.name : "SYSTEM";
+
+        // Store notification
+        this.notifications.push({
             time: new Date().toLocaleTimeString(),
-            notification: notification,
-            payload: payload,
-            sender: sender ? sender.name : "SYSTEM"
-        };
-
-        console.log("[NotificationDev]", entry);
-
-        this.notifications.push(entry);
+            notification,
+            payload: payload || null,
+            sender: senderName
+        });
 
         if (this.notifications.length > this.config.maxNotifications) {
             this.notifications.shift();
@@ -109,13 +104,13 @@ Module.register("MMM-NotificationDev", {
             this.loaded = true;
         }
 
+        // Throttle DOM updates
         if (!this.updateTimer) {
             this.updateTimer = setTimeout(() => {
                 this.updateDom();
                 this.updateTimer = null;
             }, this.config.updateInterval);
         }
-
     }
 
 });
