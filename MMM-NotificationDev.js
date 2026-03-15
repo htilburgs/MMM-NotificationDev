@@ -1,7 +1,7 @@
 Module.register("MMM-NotificationDev", {
 
     defaults: {
-        maxNotifications: 100,
+        maxNotifications: 200,
         showPayload: true,
         updateInterval: 1000,
         blockedNotifications: ["CLOCK_SECOND"]
@@ -17,6 +17,26 @@ Module.register("MMM-NotificationDev", {
         this.lastRenderedIndex = 0;
 
         Log.info("MMM-NotificationDev started");
+
+        const self = this;
+
+        // ------------------------
+        // GLOBAL NOTIFICATION INTERCEPTOR
+        // ------------------------
+
+        // Patch sendNotification
+        const originalSendNotification = Module.prototype.sendNotification;
+        Module.prototype.sendNotification = function (notification, payload) {
+            self._captureNotification(notification, payload, this.name, "CLIENT");
+            originalSendNotification.call(this, notification, payload);
+        };
+
+        // Patch sendSocketNotification
+        const originalSendSocketNotification = Module.prototype.sendSocketNotification;
+        Module.prototype.sendSocketNotification = function (notification, payload) {
+            self._captureNotification(notification, payload, this.name, "CLIENT-SOCKET");
+            originalSendSocketNotification.call(this, notification, payload);
+        };
     },
 
     getStyles: function () {
@@ -24,16 +44,15 @@ Module.register("MMM-NotificationDev", {
     },
 
     getDom: function () {
-
         const wrapper = document.createElement("div");
         wrapper.className = "MMM-NotificationDev";
 
+        // Controls
         const controls = document.createElement("div");
         controls.className = "controls";
 
         const pauseBtn = document.createElement("button");
         pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
-
         pauseBtn.onclick = () => {
             this.paused = !this.paused;
             pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
@@ -42,7 +61,6 @@ Module.register("MMM-NotificationDev", {
         const filterInput = document.createElement("input");
         filterInput.placeholder = "Filter notifications...";
         filterInput.value = this.filter;
-
         filterInput.oninput = (e) => {
             this.filter = e.target.value.toUpperCase();
             this.updateIframe(true);
@@ -50,83 +68,78 @@ Module.register("MMM-NotificationDev", {
 
         controls.appendChild(pauseBtn);
         controls.appendChild(filterInput);
-
         wrapper.appendChild(controls);
 
+        // Iframe for rendering
         if (!this.iframe) {
-
             this.iframe = document.createElement("iframe");
             this.iframe.style.width = "100%";
             this.iframe.style.height = "400px";
             this.iframe.style.border = "1px solid #444";
 
             this.iframe.onload = () => {
-
                 this.iframeReady = true;
-
                 const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
-
                 doc.open();
                 doc.write(`
                     <html>
                     <head>
-                    <style>
-                    body{
-                        font-family:monospace;
-                        color:#fff;
-                        background:#111;
-                        margin:0;
-                        padding:5px;
-                        overflow-y:auto;
-                    }
-                    .row{
-                        border-bottom:1px solid #444;
-                        padding:2px 0;
-                    }
-                    .sender{
-                        margin:0 5px;
-                    }
-                    .notification{
-                        color:#6cf;
-                    }
-                    pre{
-                        color:#aaa;
-                        background:#111;
-                        padding:2px;
-                        margin:2px 0;
-                        overflow-x:auto;
-                    }
-                    </style>
+                        <style>
+                            body {
+                                font-family: monospace;
+                                color: #fff;
+                                background: #111;
+                                margin: 0;
+                                padding: 5px;
+                                overflow-y: auto;
+                            }
+                            .row {
+                                border-bottom: 1px solid #444;
+                                padding: 2px 0;
+                            }
+                            .sender {
+                                margin: 0 5px;
+                            }
+                            .notification {
+                                color: #6cf;
+                            }
+                            pre {
+                                color: #aaa;
+                                background: #111;
+                                padding: 2px;
+                                margin: 2px 0;
+                                overflow-x: auto;
+                            }
+                        </style>
                     </head>
                     <body></body>
                     </html>
                 `);
                 doc.close();
-
                 this.updateIframe(true);
             };
-
             wrapper.appendChild(this.iframe);
         }
 
         return wrapper;
     },
 
-    notificationReceived: function (notification, payload, sender) {
-
-        if (!this.loaded) this.loaded = true;
+    // ------------------------
+    // Capture any notification
+    // ------------------------
+    _captureNotification: function(notification, payload, senderName = "SYSTEM", source = "CLIENT") {
         if (this.paused) return;
         if (this.config.blockedNotifications.includes(notification)) return;
 
-        const senderName = sender && sender.name ? sender.name : "SYSTEM";
-
-        this.notifications.push({
+        const data = {
             time: new Date().toLocaleTimeString(),
-            notification: notification,
+            notification,
             payload: payload ?? null,
             sender: senderName,
-            source: "CLIENT"
-        });
+            source
+        };
+
+        this.notifications.push(data);
 
         if (this.notifications.length > this.config.maxNotifications) {
             this.notifications.shift();
@@ -140,28 +153,15 @@ Module.register("MMM-NotificationDev", {
         }
     },
 
-    socketNotificationReceived: function (notification, payload) {
-
-        if (notification !== "NODE_NOTIFICATION") return;
-        if (this.paused) return;
-        if (this.config.blockedNotifications.includes(payload.notification)) return;
-
-        this.notifications.push(payload);
-
-        if (this.notifications.length > this.config.maxNotifications) {
-            this.notifications.shift();
-        }
-
-        if (!this.updateTimer) {
-            this.updateTimer = setTimeout(() => {
-                this.updateIframe();
-                this.updateTimer = null;
-            }, this.config.updateInterval);
+    socketNotificationReceived: function(notification, payload) {
+        // NodeHelper notifications
+        if (notification === "NODE_NOTIFICATION") {
+            payload.source = "NODE";
+            this._captureNotification(payload.notification, payload.payload, payload.sender, "NODE");
         }
     },
 
-    updateIframe: function (forceFull = false) {
-
+    updateIframe: function(forceFull = false) {
         if (!this.iframeReady) return;
 
         const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
@@ -173,54 +173,37 @@ Module.register("MMM-NotificationDev", {
         }
 
         const filtered = this.filter
-            ? this.notifications.filter(n =>
-                n.notification.toUpperCase().includes(this.filter)
-            )
+            ? this.notifications.filter(n => n.notification.toUpperCase().includes(this.filter))
             : this.notifications;
 
         for (let i = this.lastRenderedIndex; i < filtered.length; i++) {
-
             const n = filtered[i];
 
             const row = doc.createElement("div");
             row.className = "row";
 
             let senderColor;
-
-            if (n.source === "NODE") {
-                senderColor = "#f6c";
-            } else if (n.sender === "SYSTEM") {
-                senderColor = "#0ff";
-            } else {
-                senderColor = "#6cf";
-            }
+            if (n.source === "NODE") senderColor = "#f6c";
+            else if (n.sender === "SYSTEM") senderColor = "#0ff";
+            else senderColor = "#6cf";
 
             row.innerHTML = `
                 <b>${n.time}</b>
-                <span class="sender" style="color:${senderColor}">
-                    ${n.sender}
-                </span>
+                <span class="sender" style="color:${senderColor}">${n.sender}</span>
                 <span class="notification">${n.notification}</span>
             `;
 
             body.appendChild(row);
 
             if (this.config.showPayload && n.payload !== null && n.payload !== undefined) {
-
                 const pre = doc.createElement("pre");
-
-                try {
-                    pre.innerText = JSON.stringify(n.payload, null, 2);
-                } catch (e) {
-                    pre.innerText = String(n.payload);
-                }
-
+                try { pre.innerText = JSON.stringify(n.payload, null, 2); }
+                catch (e) { pre.innerText = String(n.payload); }
                 body.appendChild(pre);
             }
         }
 
         this.lastRenderedIndex = filtered.length;
-
         body.scrollTop = body.scrollHeight;
     }
 
