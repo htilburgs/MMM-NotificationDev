@@ -6,9 +6,19 @@ module.exports = NodeHelper.create({
         console.log("MMM-NotificationDev node helper started");
     },
 
-    socketNotificationReceived: function (notification, payload) {
+    notificationReceived: function (notification, payload, sender) {
+
+        const senderName = sender && sender.name ? sender.name : "SYSTEM";
 
         console.log("[NotificationDev NODE]", notification, payload);
+
+        this.sendSocketNotification("NODE_NOTIFICATION", {
+            time: new Date().toLocaleTimeString(),
+            notification: notification,
+            payload: payload ?? null,
+            sender: senderName,
+            source: "NODE"
+        });
 
     }
 
