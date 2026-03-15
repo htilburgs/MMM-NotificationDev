@@ -1,3 +1,27 @@
+// -------------------------
+// Global notification interception
+// -------------------------
+(function() {
+    if (Module.prototype._notificationDevPatched) return;
+    Module.prototype._notificationDevPatched = true;
+
+    const origSendNotification = Module.prototype.sendNotification;
+    Module.prototype.sendNotification = function(notification, payload) {
+        if (window.MMMNotificationDevInstance?._captureNotification) {
+            window.MMMNotificationDevInstance._captureNotification(notification, payload, this.name, "CLIENT");
+        }
+        return origSendNotification.call(this, notification, payload);
+    };
+
+    const origSendSocketNotification = Module.prototype.sendSocketNotification;
+    Module.prototype.sendSocketNotification = function(notification, payload) {
+        if (window.MMMNotificationDevInstance?._captureNotification) {
+            window.MMMNotificationDevInstance._captureNotification(notification, payload, this.name, "CLIENT-SOCKET");
+        }
+        return origSendSocketNotification.call(this, notification, payload);
+    };
+})();
+
 Module.register("MMM-NotificationDev", {
 
     defaults: {
@@ -7,7 +31,9 @@ Module.register("MMM-NotificationDev", {
         blockedNotifications: ["CLOCK_SECOND"]
     },
 
-    start: function () {
+    start: function() {
+        window.MMMNotificationDevInstance = this;
+
         this.notifications = [];
         this.paused = false;
         this.filter = "";
@@ -17,33 +43,13 @@ Module.register("MMM-NotificationDev", {
         this.lastRenderedIndex = 0;
 
         Log.info("MMM-NotificationDev started");
-
-        const self = this;
-
-        // ------------------------
-        // GLOBAL NOTIFICATION INTERCEPTOR
-        // ------------------------
-
-        // Patch sendNotification
-        const originalSendNotification = Module.prototype.sendNotification;
-        Module.prototype.sendNotification = function (notification, payload) {
-            self._captureNotification(notification, payload, this.name, "CLIENT");
-            originalSendNotification.call(this, notification, payload);
-        };
-
-        // Patch sendSocketNotification
-        const originalSendSocketNotification = Module.prototype.sendSocketNotification;
-        Module.prototype.sendSocketNotification = function (notification, payload) {
-            self._captureNotification(notification, payload, this.name, "CLIENT-SOCKET");
-            originalSendSocketNotification.call(this, notification, payload);
-        };
     },
 
-    getStyles: function () {
+    getStyles: function() {
         return ["MMM-NotificationDev.css"];
     },
 
-    getDom: function () {
+    getDom: function() {
         const wrapper = document.createElement("div");
         wrapper.className = "MMM-NotificationDev";
 
@@ -70,7 +76,7 @@ Module.register("MMM-NotificationDev", {
         controls.appendChild(filterInput);
         wrapper.appendChild(controls);
 
-        // Iframe for rendering
+        // Iframe
         if (!this.iframe) {
             this.iframe = document.createElement("iframe");
             this.iframe.style.width = "100%";
@@ -118,6 +124,7 @@ Module.register("MMM-NotificationDev", {
                 doc.close();
                 this.updateIframe(true);
             };
+
             wrapper.appendChild(this.iframe);
         }
 
@@ -125,7 +132,7 @@ Module.register("MMM-NotificationDev", {
     },
 
     // ------------------------
-    // Capture any notification
+    // Capture notifications
     // ------------------------
     _captureNotification: function(notification, payload, senderName = "SYSTEM", source = "CLIENT") {
         if (this.paused) return;
