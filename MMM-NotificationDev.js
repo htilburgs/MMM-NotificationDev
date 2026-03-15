@@ -123,7 +123,7 @@ Module.register("MMM-NotificationDev", {
             const n = filtered[i];
 
             // Skip completely empty notifications
-            if (!n.notification && (n.payload === null || n.payload === undefined)) continue;
+            // if (!n.notification && (n.payload === null || n.payload === undefined)) continue;
 
             const row = doc.createElement("div");
             row.className = "row";
