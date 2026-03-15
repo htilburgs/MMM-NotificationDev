@@ -4,7 +4,7 @@ Module.register("MMM-NotificationDev", {
         maxNotifications: 100,
         showPayload: true,
         updateInterval: 1000, // throttle DOM updates in ms
-        blockedNotifications: ["MODULE_DOM", "DOM_OBJECTS_CREATED", "CLOCK_SECOND"] // configurable
+        blockedNotifications: ["CLOCK_SECOND"] // configurable
     },
 
     start: function () {
