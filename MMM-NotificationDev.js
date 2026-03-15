@@ -1,34 +1,10 @@
-// -------------------------
-// Global notification interception
-// -------------------------
-(function() {
-    if (Module.prototype._notificationDevPatched) return;
-    Module.prototype._notificationDevPatched = true;
-
-    const origSendNotification = Module.prototype.sendNotification;
-    Module.prototype.sendNotification = function(notification, payload) {
-        if (window.MMMNotificationDevInstance?._captureNotification) {
-            window.MMMNotificationDevInstance._captureNotification(notification, payload, this.name, "CLIENT");
-        }
-        return origSendNotification.call(this, notification, payload);
-    };
-
-    const origSendSocketNotification = Module.prototype.sendSocketNotification;
-    Module.prototype.sendSocketNotification = function(notification, payload) {
-        if (window.MMMNotificationDevInstance?._captureNotification) {
-            window.MMMNotificationDevInstance._captureNotification(notification, payload, this.name, "CLIENT-SOCKET");
-        }
-        return origSendSocketNotification.call(this, notification, payload);
-    };
-})();
-
 Module.register("MMM-NotificationDev", {
 
     defaults: {
         maxNotifications: 200,
         showPayload: true,
         updateInterval: 1000,
-        blockedNotifications: ["CLOCK_SECOND"]
+        blockedNotifications: [] // you can block "CLOCK_SECOND" if too noisy
     },
 
     start: function() {
@@ -91,31 +67,11 @@ Module.register("MMM-NotificationDev", {
                     <html>
                     <head>
                         <style>
-                            body {
-                                font-family: monospace;
-                                color: #fff;
-                                background: #111;
-                                margin: 0;
-                                padding: 5px;
-                                overflow-y: auto;
-                            }
-                            .row {
-                                border-bottom: 1px solid #444;
-                                padding: 2px 0;
-                            }
-                            .sender {
-                                margin: 0 5px;
-                            }
-                            .notification {
-                                color: #6cf;
-                            }
-                            pre {
-                                color: #aaa;
-                                background: #111;
-                                padding: 2px;
-                                margin: 2px 0;
-                                overflow-x: auto;
-                            }
+                            body { font-family: monospace; color: #fff; background: #111; margin: 0; padding: 5px; overflow-y:auto; }
+                            .row { border-bottom:1px solid #444; padding:2px 0; }
+                            .sender { margin:0 5px; }
+                            .notification { color:#6cf; }
+                            pre { color:#aaa; background:#111; padding:2px; margin:2px 0; overflow-x:auto; }
                         </style>
                     </head>
                     <body></body>
@@ -124,29 +80,37 @@ Module.register("MMM-NotificationDev", {
                 doc.close();
                 this.updateIframe(true);
             };
-
             wrapper.appendChild(this.iframe);
         }
 
         return wrapper;
     },
 
-    // ------------------------
-    // Capture notifications
-    // ------------------------
-    _captureNotification: function(notification, payload, senderName = "SYSTEM", source = "CLIENT") {
+    // Capture notifications from browser modules
+    notificationReceived: function(notification, payload, sender) {
+        const senderName = sender?.name || "SYSTEM";
+        this._captureNotification(notification, payload, senderName, "CLIENT");
+    },
+
+    // Capture forwarded NodeHelper notifications
+    socketNotificationReceived: function(notification, payload) {
+        if (notification === "NODE_NOTIFICATION") {
+            this._captureNotification(payload.notification, payload.payload, payload.sender, "NODE");
+        }
+    },
+
+    // Add a new notification to the list
+    _captureNotification: function(notification, payload, sender, source) {
         if (this.paused) return;
         if (this.config.blockedNotifications.includes(notification)) return;
 
-        const data = {
+        this.notifications.push({
             time: new Date().toLocaleTimeString(),
             notification,
             payload: payload ?? null,
-            sender: senderName,
+            sender,
             source
-        };
-
-        this.notifications.push(data);
+        });
 
         if (this.notifications.length > this.config.maxNotifications) {
             this.notifications.shift();
@@ -160,14 +124,7 @@ Module.register("MMM-NotificationDev", {
         }
     },
 
-    socketNotificationReceived: function(notification, payload) {
-        // NodeHelper notifications
-        if (notification === "NODE_NOTIFICATION") {
-            payload.source = "NODE";
-            this._captureNotification(payload.notification, payload.payload, payload.sender, "NODE");
-        }
-    },
-
+    // Render notifications into iframe
     updateIframe: function(forceFull = false) {
         if (!this.iframeReady) return;
 
@@ -189,16 +146,11 @@ Module.register("MMM-NotificationDev", {
             const row = doc.createElement("div");
             row.className = "row";
 
-            let senderColor;
-            if (n.source === "NODE") senderColor = "#f6c";
-            else if (n.sender === "SYSTEM") senderColor = "#0ff";
-            else senderColor = "#6cf";
+            let color = "#6cf";
+            if (n.source === "NODE") color = "#f6c";
+            else if (n.sender === "SYSTEM") color = "#0ff";
 
-            row.innerHTML = `
-                <b>${n.time}</b>
-                <span class="sender" style="color:${senderColor}">${n.sender}</span>
-                <span class="notification">${n.notification}</span>
-            `;
+            row.innerHTML = `<b>${n.time}</b> <span class="sender" style="color:${color}">${n.sender}</span> <span class="notification">${n.notification}</span>`;
 
             body.appendChild(row);
 
