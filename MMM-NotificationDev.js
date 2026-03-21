@@ -38,10 +38,7 @@ Module.register("MMM-NotificationDev", {
         pauseBtn.onclick = () => {
             this.paused = !this.paused;
             pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
-
-            if (!this.paused) {
-                this.scheduleUpdate();
-            }
+            if (!this.paused) this.scheduleUpdate();
         };
 
         const clearBtn = document.createElement("button");
@@ -75,7 +72,6 @@ Module.register("MMM-NotificationDev", {
             this.iframe.onload = () => {
                 this.iframeReady = true;
                 const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
-
                 doc.open();
                 doc.write(`
                     <html>
@@ -84,7 +80,7 @@ Module.register("MMM-NotificationDev", {
                             body { font-family: monospace; color: #fff; background: #111; margin: 0; padding: 5px; overflow-y:auto; }
                             .row { border-bottom:1px solid #444; padding:2px 0; }
                             .sender { margin:0 5px; }
-                            .notification { color:#6cf; }
+                            .notification { font-weight:bold; }
                             pre { color:#aaa; background:#111; padding:2px; margin:2px 0; overflow-x:auto; }
                         </style>
                     </head>
@@ -92,7 +88,6 @@ Module.register("MMM-NotificationDev", {
                     </html>
                 `);
                 doc.close();
-
                 this.updateIframe(true);
             };
 
@@ -116,26 +111,43 @@ Module.register("MMM-NotificationDev", {
     _captureNotification: function(notification, payload, sender, source) {
         if (this.config.blockedNotifications.includes(notification)) return;
 
+        const time = new Date().toLocaleTimeString();
+
+        // Determine color for console and iframe
+        let color = "#6cf"; // CLIENT
+        if (source === "NODE") color = "#f6c";
+        if (sender === "SYSTEM") color = "#0ff";
+        if (notification.includes("ERROR")) color = "#f66";
+
+        // Console log with colors
+        console.log(
+            `%c[${source}] %c${notification} %c${sender} %c(${time})`,
+            `color: gray; font-weight: bold;`,
+            `color: ${color}; font-weight: bold;`,
+            `color: ${color}; font-style: italic;`,
+            `color: #aaa;`
+        );
+        if (payload !== null && payload !== undefined) console.log(payload);
+
+        // Save notification for iframe
         this.notifications.push({
-            time: new Date().toLocaleTimeString(),
+            time,
             notification,
             payload: payload ?? null,
             sender,
-            source
+            source,
+            color
         });
 
         if (this.notifications.length > this.config.maxNotifications) {
             this.notifications.shift();
         }
 
-        if (!this.paused) {
-            this.scheduleUpdate();
-        }
+        if (!this.paused) this.scheduleUpdate();
     },
 
     scheduleUpdate: function() {
         if (this.updateTimer) return;
-
         this.updateTimer = setTimeout(() => {
             this.updateIframe();
             this.updateTimer = null;
@@ -147,7 +159,6 @@ Module.register("MMM-NotificationDev", {
 
         const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
         const body = doc.body;
-
         const isFiltering = !!this.filter;
 
         if (forceFull || isFiltering) {
@@ -156,9 +167,7 @@ Module.register("MMM-NotificationDev", {
         }
 
         const filtered = isFiltering
-            ? this.notifications.filter(n =>
-                n.notification.toUpperCase().includes(this.filter)
-            )
+            ? this.notifications.filter(n => n.notification.toUpperCase().includes(this.filter))
             : this.notifications;
 
         const fragment = doc.createDocumentFragment();
@@ -169,37 +178,25 @@ Module.register("MMM-NotificationDev", {
             const row = doc.createElement("div");
             row.className = "row";
 
-            let color = "#6cf";
-            if (n.source === "NODE") color = "#f6c";
-            else if (n.sender === "SYSTEM") color = "#0ff";
-            if (n.notification.includes("ERROR")) color = "#f66";
-
             row.innerHTML = `<b>${n.time}</b> 
-                <span class="sender" style="color:${color}">${n.sender}</span> 
-                <span class="notification">${n.notification}</span>`;
+                <span class="sender" style="color:${n.color}">${n.sender}</span> 
+                <span class="notification" style="color:${n.color}">${n.notification}</span>`;
 
             fragment.appendChild(row);
 
             if (this.config.showPayload && n.payload !== null && n.payload !== undefined) {
                 const pre = doc.createElement("pre");
-                try {
-                    pre.innerText = JSON.stringify(n.payload, null, 2);
-                } catch (e) {
-                    pre.innerText = String(n.payload);
-                }
+                try { pre.innerText = JSON.stringify(n.payload, null, 2); }
+                catch (e) { pre.innerText = String(n.payload); }
                 fragment.appendChild(pre);
             }
         }
 
-        // Smart auto-scroll
         const isAtBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 5;
-
         body.appendChild(fragment);
         this.lastRenderedIndex = filtered.length;
 
-        if (isAtBottom) {
-            body.scrollTop = body.scrollHeight;
-        }
+        if (isAtBottom) body.scrollTop = body.scrollHeight;
     }
 
 });
