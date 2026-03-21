@@ -4,7 +4,7 @@ Module.register("MMM-NotificationDev", {
         maxNotifications: 200,
         showPayload: true,
         updateInterval: 1000,
-        blockedNotifications: [] // you can block "CLOCK_SECOND" if too noisy
+        blockedNotifications: []
     },
 
     start: function() {
@@ -38,6 +38,18 @@ Module.register("MMM-NotificationDev", {
         pauseBtn.onclick = () => {
             this.paused = !this.paused;
             pauseBtn.innerHTML = this.paused ? "Resume" : "Pause";
+
+            if (!this.paused) {
+                this.scheduleUpdate();
+            }
+        };
+
+        const clearBtn = document.createElement("button");
+        clearBtn.innerHTML = "Clear";
+        clearBtn.onclick = () => {
+            this.notifications = [];
+            this.lastRenderedIndex = 0;
+            this.updateIframe(true);
         };
 
         const filterInput = document.createElement("input");
@@ -49,6 +61,7 @@ Module.register("MMM-NotificationDev", {
         };
 
         controls.appendChild(pauseBtn);
+        controls.appendChild(clearBtn);
         controls.appendChild(filterInput);
         wrapper.appendChild(controls);
 
@@ -62,6 +75,7 @@ Module.register("MMM-NotificationDev", {
             this.iframe.onload = () => {
                 this.iframeReady = true;
                 const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
+
                 doc.open();
                 doc.write(`
                     <html>
@@ -78,30 +92,28 @@ Module.register("MMM-NotificationDev", {
                     </html>
                 `);
                 doc.close();
+
                 this.updateIframe(true);
             };
+
             wrapper.appendChild(this.iframe);
         }
 
         return wrapper;
     },
 
-    // Capture notifications from browser modules
     notificationReceived: function(notification, payload, sender) {
         const senderName = sender?.name || "SYSTEM";
         this._captureNotification(notification, payload, senderName, "CLIENT");
     },
 
-    // Capture forwarded NodeHelper notifications
     socketNotificationReceived: function(notification, payload) {
         if (notification === "NODE_NOTIFICATION") {
             this._captureNotification(payload.notification, payload.payload, payload.sender, "NODE");
         }
     },
 
-    // Add a new notification to the list
     _captureNotification: function(notification, payload, sender, source) {
-        if (this.paused) return;
         if (this.config.blockedNotifications.includes(notification)) return;
 
         this.notifications.push({
@@ -116,29 +128,40 @@ Module.register("MMM-NotificationDev", {
             this.notifications.shift();
         }
 
-        if (!this.updateTimer) {
-            this.updateTimer = setTimeout(() => {
-                this.updateIframe();
-                this.updateTimer = null;
-            }, this.config.updateInterval);
+        if (!this.paused) {
+            this.scheduleUpdate();
         }
     },
 
-    // Render notifications into iframe
+    scheduleUpdate: function() {
+        if (this.updateTimer) return;
+
+        this.updateTimer = setTimeout(() => {
+            this.updateIframe();
+            this.updateTimer = null;
+        }, this.config.updateInterval);
+    },
+
     updateIframe: function(forceFull = false) {
         if (!this.iframeReady) return;
 
         const doc = this.iframe.contentDocument || this.iframe.contentWindow.document;
         const body = doc.body;
 
-        if (forceFull) {
+        const isFiltering = !!this.filter;
+
+        if (forceFull || isFiltering) {
             body.innerHTML = "";
             this.lastRenderedIndex = 0;
         }
 
-        const filtered = this.filter
-            ? this.notifications.filter(n => n.notification.toUpperCase().includes(this.filter))
+        const filtered = isFiltering
+            ? this.notifications.filter(n =>
+                n.notification.toUpperCase().includes(this.filter)
+            )
             : this.notifications;
+
+        const fragment = doc.createDocumentFragment();
 
         for (let i = this.lastRenderedIndex; i < filtered.length; i++) {
             const n = filtered[i];
@@ -149,21 +172,34 @@ Module.register("MMM-NotificationDev", {
             let color = "#6cf";
             if (n.source === "NODE") color = "#f6c";
             else if (n.sender === "SYSTEM") color = "#0ff";
+            if (n.notification.includes("ERROR")) color = "#f66";
 
-            row.innerHTML = `<b>${n.time}</b> <span class="sender" style="color:${color}">${n.sender}</span> <span class="notification">${n.notification}</span>`;
+            row.innerHTML = `<b>${n.time}</b> 
+                <span class="sender" style="color:${color}">${n.sender}</span> 
+                <span class="notification">${n.notification}</span>`;
 
-            body.appendChild(row);
+            fragment.appendChild(row);
 
             if (this.config.showPayload && n.payload !== null && n.payload !== undefined) {
                 const pre = doc.createElement("pre");
-                try { pre.innerText = JSON.stringify(n.payload, null, 2); }
-                catch (e) { pre.innerText = String(n.payload); }
-                body.appendChild(pre);
+                try {
+                    pre.innerText = JSON.stringify(n.payload, null, 2);
+                } catch (e) {
+                    pre.innerText = String(n.payload);
+                }
+                fragment.appendChild(pre);
             }
         }
 
+        // Smart auto-scroll
+        const isAtBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 5;
+
+        body.appendChild(fragment);
         this.lastRenderedIndex = filtered.length;
-        body.scrollTop = body.scrollHeight;
+
+        if (isAtBottom) {
+            body.scrollTop = body.scrollHeight;
+        }
     }
 
 });
